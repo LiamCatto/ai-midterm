@@ -77,6 +77,15 @@ export interface MatchResult {
   reason: GameWinReason;
 }
 
+/** A fully recorded game with moves, for replay. */
+export interface RecordedGame {
+  whiteBot: BotInfo;
+  blackBot: BotInfo;
+  moves: MoveRecord[];
+  result: GameResult;
+  reason: GameWinReason;
+}
+
 export interface TournamentMatch {
   id: string;
   roundIndex: number;
@@ -116,8 +125,8 @@ export interface TournamentState {
   bracketsViewerData?: BracketsViewerData | null;
   /** Current match participants for "Now playing" display */
   currentMatchBots?: { white: BotInfo; black: BotInfo } | null;
-  /** Log of match results (one line per game): white vs black, winner, reason */
-  matchLog?: { white: string; black: string; winner: string; reason: string }[];
+  /** Log of match results (one line per game): white vs black, winner, reason + full recording */
+  matchLog?: { white: string; black: string; winner: string; reason: string; recording: RecordedGame }[];
 }
 
 // Messages from main thread -> worker

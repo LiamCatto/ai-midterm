@@ -6,6 +6,7 @@ import type {
   GameResult,
   GameWinReason,
   MatchResult,
+  RecordedGame,
   TournamentState,
 } from './lib/types';
 import { GameEngine } from './lib/game-engine';
@@ -44,6 +45,8 @@ function App() {
   const [tournament, setTournament] = useState<TournamentState | null>(null);
   const [tournamentRunning, setTournamentRunning] = useState(false);
   const engineRef = useRef<GameEngine | null>(null);
+  const [replayGame, setReplayGame] = useState<RecordedGame | null>(null);
+  const [replayMoveIndex, setReplayMoveIndex] = useState(-1);
 
   // Fetch manifest on mount
   useEffect(() => {
@@ -133,7 +136,7 @@ function App() {
     return 'draw-50-move';
   };
 
-  /** Play a single game and return the raw result. */
+  /** Play a single game and return the raw result + full move recording. */
   const playSingleGame = async (
     white: BotInfo,
     black: BotInfo,
@@ -142,6 +145,7 @@ function App() {
     reason: GameWinReason;
     isDraw: boolean;
     totals: { white: number; black: number };
+    recording: RecordedGame;
   }> => {
     if (!engineRef.current) throw new Error('Game engine not ready');
 
@@ -166,7 +170,16 @@ function App() {
         state.result.type === 'draw-insufficient' ||
         state.result.type === 'draw-50-move');
 
-    return { winnerColor, reason, isDraw, totals };
+    // Snapshot the full game for replay
+    const recording: RecordedGame = {
+      whiteBot: white,
+      blackBot: black,
+      moves: [...state.moves],
+      result: state.result,
+      reason,
+    };
+
+    return { winnerColor, reason, isDraw, totals, recording };
   };
 
   /**
@@ -185,6 +198,7 @@ function App() {
     loser: BotInfo;
     gameResults: MatchResult[];
     matchTotalTimeMs: Record<string, number>;
+    recordings: RecordedGame[];
   }> => {
     if (!engineRef.current) {
       throw new Error('Game engine not ready');
@@ -195,18 +209,20 @@ function App() {
 
     const matchTotalTimeMs: Record<string, number> = { [whiteBot.username]: 0, [blackBot.username]: 0 };
     const gameResults: MatchResult[] = [];
+    const recordings: RecordedGame[] = [];
 
     try {
       // ── Game 1 ──────────────────────────────────────────────
       const g1 = await playSingleGame(whiteBot, blackBot);
       matchTotalTimeMs[whiteBot.username] += g1.totals.white;
       matchTotalTimeMs[blackBot.username] += g1.totals.black;
+      recordings.push(g1.recording);
 
       if (!g1.isDraw) {
         const winner = g1.winnerColor === 'w' ? whiteBot : blackBot;
         const loser = winner === whiteBot ? blackBot : whiteBot;
         gameResults.push({ winner, loser, reason: g1.reason });
-        return { winner, loser, gameResults, matchTotalTimeMs };
+        return { winner, loser, gameResults, matchTotalTimeMs, recordings };
       }
 
       // Game 1 was a draw — record it and play a rematch with swapped colours
@@ -214,16 +230,15 @@ function App() {
 
       // ── Game 2 (rematch, colours swapped) ───────────────────
       const g2 = await playSingleGame(blackBot, whiteBot);
-      // blackBot played white in g2, whiteBot played black
       matchTotalTimeMs[blackBot.username] += g2.totals.white;
       matchTotalTimeMs[whiteBot.username] += g2.totals.black;
+      recordings.push(g2.recording);
 
       if (!g2.isDraw) {
-        // g2.winnerColor is relative to g2 where blackBot=white, whiteBot=black
         const winner = g2.winnerColor === 'w' ? blackBot : whiteBot;
         const loser = winner === whiteBot ? blackBot : whiteBot;
         gameResults.push({ winner, loser, reason: g2.reason });
-        return { winner, loser, gameResults, matchTotalTimeMs };
+        return { winner, loser, gameResults, matchTotalTimeMs, recordings };
       }
 
       // Both games drawn — tiebreak by total thinking time
@@ -235,7 +250,7 @@ function App() {
           : blackBot;
       const loser = winner === whiteBot ? blackBot : whiteBot;
       gameResults.push({ winner, loser, reason: 'time-advantage' });
-      return { winner, loser, gameResults, matchTotalTimeMs };
+      return { winner, loser, gameResults, matchTotalTimeMs, recordings };
     } finally {
       engineRef.current.setTimeLimit(originalTimeLimit);
     }
@@ -300,12 +315,19 @@ function App() {
         await new Promise((r) => setTimeout(r, 0));
 
         const result = await playBotMatch(whiteBot, blackBot);
+        let recIdx = 0;
         for (const gr of result.gameResults) {
+          // For 'draw' entries they correspond to actual games; 'time-advantage'
+          // is a synthetic result with no separate game recording.
+          const recording = gr.reason !== 'time-advantage' && recIdx < result.recordings.length
+            ? result.recordings[recIdx++]
+            : result.recordings[result.recordings.length - 1];
           baseState.matchLog!.push({
             white: whiteBot.username,
             black: blackBot.username,
             winner: gr.winner.username,
             reason: gr.reason,
+            recording,
           });
         }
         setTournament((prev) => (prev ? { ...prev, matchLog: baseState.matchLog } : prev));
@@ -448,6 +470,34 @@ function App() {
     setSelectedTournamentBots(new Set());
   };
 
+  // ── Replay helpers ──────────────────────────────────────────
+  const openReplay = (recording: RecordedGame) => {
+    setReplayGame(recording);
+    setReplayMoveIndex(recording.moves.length - 1);
+  };
+
+  const closeReplay = () => {
+    setReplayGame(null);
+    setReplayMoveIndex(-1);
+  };
+
+  const replayState: GameState | null = replayGame
+    ? {
+        status: 'finished',
+        result: replayGame.result,
+        fen:
+          replayMoveIndex >= 0 && replayMoveIndex < replayGame.moves.length
+            ? replayGame.moves[replayMoveIndex].fen
+            : INITIAL_FEN,
+        moves: replayGame.moves.slice(0, replayMoveIndex + 1),
+        currentTurn: replayMoveIndex >= 0 ? (replayGame.moves[replayMoveIndex].color === 'w' ? 'b' : 'w') : 'w',
+        whitePlayer: { type: 'bot', bot: replayGame.whiteBot },
+        blackPlayer: { type: 'bot', bot: replayGame.blackBot },
+        lastMoveTimeMs: 0,
+        timeLimitMs: 0,
+      }
+    : null;
+
   // Sort bots by updatedAt (newest first)
   const sortedBots = [...bots].sort((a, b) => {
     const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
@@ -582,10 +632,61 @@ function App() {
             />
             {tournament?.matchLog && tournament.matchLog.length > 0 && (
               <div className="match-log-panel">
-                <h3>Match results</h3>
+                <h3>Match results {replayGame && <span className="replay-badge">REPLAY</span>}</h3>
+
+                {/* ── Replay viewer ── */}
+                {replayGame && replayState && (
+                  <div className="replay-viewer">
+                    <div className="replay-header">
+                      <span>{replayGame.whiteBot.username} vs {replayGame.blackBot.username}</span>
+                      <button className="btn-secondary btn-sm" onClick={closeReplay}>Close</button>
+                    </div>
+                    <GameBoard gameState={replayState} boardOrientation="white" />
+                    <div className="replay-controls">
+                      <button
+                        className="btn-secondary btn-sm"
+                        onClick={() => setReplayMoveIndex(-1)}
+                        disabled={replayMoveIndex < 0}
+                      >
+                        &#9198;
+                      </button>
+                      <button
+                        className="btn-secondary btn-sm"
+                        onClick={() => setReplayMoveIndex((i) => Math.max(-1, i - 1))}
+                        disabled={replayMoveIndex < 0}
+                      >
+                        &#9664;
+                      </button>
+                      <span className="replay-move-counter">
+                        {replayMoveIndex + 1} / {replayGame.moves.length}
+                      </span>
+                      <button
+                        className="btn-secondary btn-sm"
+                        onClick={() => setReplayMoveIndex((i) => Math.min(replayGame!.moves.length - 1, i + 1))}
+                        disabled={replayMoveIndex >= replayGame.moves.length - 1}
+                      >
+                        &#9654;
+                      </button>
+                      <button
+                        className="btn-secondary btn-sm"
+                        onClick={() => setReplayMoveIndex(replayGame!.moves.length - 1)}
+                        disabled={replayMoveIndex >= replayGame.moves.length - 1}
+                      >
+                        &#9197;
+                      </button>
+                    </div>
+                    <MoveHistory moves={replayState.moves} currentFen={replayState.fen} />
+                  </div>
+                )}
+
                 <ul className="match-log-list">
                   {tournament.matchLog.map((entry, i) => (
-                    <li key={i} className="match-log-line">
+                    <li
+                      key={i}
+                      className={`match-log-line clickable ${replayGame === entry.recording ? 'active-replay' : ''}`}
+                      onClick={() => openReplay(entry.recording)}
+                      title="Click to replay this game"
+                    >
                       {entry.white} vs {entry.black}: {entry.winner} won ({formatReason(entry.reason)})
                     </li>
                   ))}
