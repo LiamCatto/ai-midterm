@@ -86,6 +86,14 @@ export interface RecordedGame {
   reason: GameWinReason;
 }
 
+export interface RoundRobinStanding {
+  bot: BotInfo;
+  wins: number;
+  losses: number;
+  draws: number;
+  totalTimeMs: number;
+}
+
 export interface TournamentMatch {
   id: string;
   roundIndex: number;
@@ -127,6 +135,10 @@ export interface TournamentState {
   currentMatchBots?: { white: BotInfo; black: BotInfo } | null;
   /** Log of match results (one line per game): white vs black, winner, reason + full recording */
   matchLog?: { white: string; black: string; winner: string; reason: string; recording: RecordedGame }[];
+  /** Round-robin standings (only set for round-robin tournaments) */
+  roundRobinStandings?: RoundRobinStanding[];
+  /** Round-robin progress string, e.g. "3 / 12" */
+  roundRobinProgress?: string;
 }
 
 // Messages from main thread -> worker

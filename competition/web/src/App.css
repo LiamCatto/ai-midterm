@@ -798,6 +798,100 @@ body {
   color: var(--text-secondary);
 }
 
+/* ── Round Robin ────────────────────────────────────────── */
+
+.btn-round-robin {
+  background: linear-gradient(135deg, var(--success), #2e7d32) !important;
+}
+.btn-round-robin:hover:not(:disabled) {
+  background: linear-gradient(135deg, #81c784, #388e3c) !important;
+}
+
+.standings-section {
+  margin-top: 20px;
+}
+
+.standings-section h3 {
+  margin-bottom: 10px;
+  color: var(--accent);
+  font-size: 1.1em;
+}
+
+.standings-progress {
+  font-weight: 400;
+  font-size: 0.85em;
+  color: var(--text-secondary);
+}
+
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.standings-table th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.standings-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.standings-table tbody tr:hover {
+  background: rgba(79, 195, 247, 0.08);
+}
+
+.standing-rank {
+  font-weight: 700;
+  color: var(--text-secondary);
+  width: 32px;
+}
+
+.standing-bot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.standing-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.standing-wins {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.standing-losses {
+  color: var(--error);
+  font-weight: 700;
+}
+
+.standing-time {
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.standing-first .standing-rank { color: #ffd700; }
+.standing-second .standing-rank { color: #c0c0c0; }
+.standing-third .standing-rank { color: #cd7f32; }
+
+.standing-first { background: rgba(255, 215, 0, 0.08); }
+.standing-second { background: rgba(192, 192, 192, 0.06); }
+.standing-third { background: rgba(205, 127, 50, 0.06); }
+
 /* ── Replay ─────────────────────────────────────────────── */
 
 .match-log-line.clickable {

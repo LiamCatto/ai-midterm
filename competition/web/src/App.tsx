@@ -7,6 +7,7 @@ import type {
   GameWinReason,
   MatchResult,
   RecordedGame,
+  RoundRobinStanding,
   TournamentState,
 } from './lib/types';
 import { GameEngine } from './lib/game-engine';
@@ -391,6 +392,132 @@ function App() {
     }
   };
 
+  const handleStartRoundRobin = async () => {
+    const useBots = bots.filter((b) => selectedTournamentBots.has(b.username));
+    if (tournamentRunning || useBots.length < 2) return;
+    setError(null);
+    setTournamentRunning(true);
+
+    try {
+      // Build all pairings: each bot plays every other bot once as white and once as black
+      const pairings: { white: BotInfo; black: BotInfo }[] = [];
+      for (let i = 0; i < useBots.length; i++) {
+        for (let j = 0; j < useBots.length; j++) {
+          if (i !== j) pairings.push({ white: useBots[i], black: useBots[j] });
+        }
+      }
+
+      // Standings map
+      const standingsMap = new Map<string, RoundRobinStanding>();
+      for (const bot of useBots) {
+        standingsMap.set(bot.username, { bot, wins: 0, losses: 0, draws: 0, totalTimeMs: 0 });
+      }
+
+      const matchLog: TournamentState['matchLog'] = [];
+
+      const baseState: TournamentState = {
+        status: 'running',
+        rounds: [],
+        currentMatchId: null,
+        champion: null,
+        runnerUp: null,
+        thirdPlace: null,
+        fourthPlace: null,
+        headToHead: {},
+        tournamentTimeLimitMs: timeLimitMs,
+        matchLog,
+        roundRobinStandings: [],
+        roundRobinProgress: `0 / ${pairings.length}`,
+      };
+
+      setTournament({ ...baseState });
+
+      for (let pi = 0; pi < pairings.length; pi++) {
+        const { white, black } = pairings[pi];
+
+        setTournament((prev) =>
+          prev
+            ? {
+                ...prev,
+                currentMatchBots: { white, black },
+                roundRobinProgress: `${pi} / ${pairings.length}`,
+              }
+            : prev,
+        );
+        await new Promise((r) => setTimeout(r, 0));
+
+        const result = await playBotMatch(white, black);
+
+        // Record every game result in the match log
+        let recIdx = 0;
+        for (const gr of result.gameResults) {
+          const recording =
+            gr.reason !== 'time-advantage' && recIdx < result.recordings.length
+              ? result.recordings[recIdx++]
+              : result.recordings[result.recordings.length - 1];
+          matchLog.push({
+            white: white.username,
+            black: black.username,
+            winner: gr.winner.username,
+            reason: gr.reason,
+            recording,
+          });
+        }
+
+        // Update standings
+        const ws = standingsMap.get(result.winner.username)!;
+        const ls = standingsMap.get(result.loser.username)!;
+        ws.wins += 1;
+        ls.losses += 1;
+        ws.totalTimeMs += result.matchTotalTimeMs[result.winner.username] ?? 0;
+        ls.totalTimeMs += result.matchTotalTimeMs[result.loser.username] ?? 0;
+
+        const sorted = [...standingsMap.values()].sort((a, b) => {
+          if (b.wins !== a.wins) return b.wins - a.wins;
+          return a.totalTimeMs - b.totalTimeMs;
+        });
+
+        setTournament((prev) =>
+          prev
+            ? {
+                ...prev,
+                matchLog: [...matchLog],
+                roundRobinStandings: sorted,
+                roundRobinProgress: `${pi + 1} / ${pairings.length}`,
+                currentMatchBots: null,
+              }
+            : prev,
+        );
+      }
+
+      const finalSorted = [...standingsMap.values()].sort((a, b) => {
+        if (b.wins !== a.wins) return b.wins - a.wins;
+        return a.totalTimeMs - b.totalTimeMs;
+      });
+
+      setTournament((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: 'finished',
+              roundRobinStandings: finalSorted,
+              roundRobinProgress: `${pairings.length} / ${pairings.length}`,
+              champion: finalSorted[0]?.bot ?? null,
+              runnerUp: finalSorted[1]?.bot ?? null,
+              thirdPlace: finalSorted[2]?.bot ?? null,
+              fourthPlace: finalSorted[3]?.bot ?? null,
+              currentMatchBots: null,
+            }
+          : prev,
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Round-robin tournament failed: ${msg}`);
+    } finally {
+      setTournamentRunning(false);
+    }
+  };
+
   const handleResetTournament = () => {
     if (tournamentRunning) return;
     setTournament(null);
@@ -530,8 +657,7 @@ function App() {
       <div className="tournament-panel">
         <h2>Bot Tournament</h2>
         <p className="tournament-subtitle">
-          Double-elimination, randomized bracket. Losers drop to loser bracket;
-          champion must lose twice to be eliminated. Best-of-3 series per match.
+          Choose double-elimination (bracket) or round-robin (everyone plays everyone).
           Uses the bot time limit above.
         </p>
         <div className="tournament-actions">
@@ -602,7 +728,16 @@ function App() {
               tournamentActive || selectedTournamentBots.size < 2 || loading
             }
           >
-            {tournamentActive ? 'Tournament Running...' : 'Start Tournament'}
+            {tournamentActive ? 'Tournament Running...' : 'Start Double Elimination Tournament'}
+          </button>
+          <button
+            className="btn-start btn-round-robin"
+            onClick={handleStartRoundRobin}
+            disabled={
+              tournamentActive || selectedTournamentBots.size < 2 || loading
+            }
+          >
+            {tournamentActive ? 'Tournament Running...' : 'Start Round Robin Tournament'}
           </button>
           <button
             className="btn-secondary"
@@ -620,6 +755,43 @@ function App() {
         )}
 
         <TournamentBracket tournament={tournament} />
+
+        {/* ── Round-robin standings table ── */}
+        {tournament?.roundRobinStandings && tournament.roundRobinStandings.length > 0 && (
+          <div className="standings-section">
+            <h3>
+              Round Robin Standings
+              {tournament.roundRobinProgress && (
+                <span className="standings-progress"> ({tournament.roundRobinProgress} matches)</span>
+              )}
+            </h3>
+            <table className="standings-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Bot</th>
+                  <th>W</th>
+                  <th>L</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tournament.roundRobinStandings.map((s, idx) => (
+                  <tr key={s.bot.username} className={idx === 0 ? 'standing-first' : idx === 1 ? 'standing-second' : idx === 2 ? 'standing-third' : ''}>
+                    <td className="standing-rank">{idx + 1}</td>
+                    <td className="standing-bot">
+                      <img src={s.bot.avatar} alt={s.bot.username} className="standing-avatar" />
+                      {s.bot.username}
+                    </td>
+                    <td className="standing-wins">{s.wins}</td>
+                    <td className="standing-losses">{s.losses}</td>
+                    <td className="standing-time">{(s.totalTimeMs / 1000).toFixed(1)}s</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {(gameState.whitePlayer || loading) && (
