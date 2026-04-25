@@ -1,0 +1,7 @@
+Search Algorith: Min-Max
+Advanced Techniques:
+	- Alpha-Beta Pruning
+	- Iterative Deepening
+	- Quiescence Search
+Additional Features:
+Experiments:
