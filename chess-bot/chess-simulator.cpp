@@ -13,16 +13,17 @@ enum class PieceValues {
     KING = 99999
 };
 
-const int MAX_DEPTH = 3;   // Maximum depth for general search
+const int MAX_DEPTH = 16;   // Maximum depth for general search
 const int MAX_QDEPTH = 5;   // Maximum depth for quiescence search
 const int MATE = 100000;    // Score value of a mate
 const int INF = std::numeric_limits<int>::infinity();
+const int ASP_SEARCH_MAX = 3;   // Maximum researches before using INF starting bounds.
 
 static int g_nodeCount = 0;
 static std::chrono::steady_clock::time_point g_timeStart;
 static int g_timeLimitMS;
 
-
+// Debug
 
 int counter = 0;
 
@@ -64,7 +65,7 @@ chess::Move ChessSimulator::FindBestMove(std::string fen, int timeLimit)
     g_timeLimitMS = timeLimit * 85 / 100;  // Leaves a margin of 15% of the time limit to account for OS jitter
     g_nodeCount = 0;
     chess::Move bestMove = chess::Move::NO_MOVE;
-    chess::Move currBest = chess::Move::NO_MOVE;
+    int prevScore = 0;  // Score from previous depth
 
     // Pick any legal move as a fallback
     chess::Movelist moves;
@@ -73,24 +74,31 @@ chess::Move ChessSimulator::FindBestMove(std::string fen, int timeLimit)
     if (moves.size() > 0) bestMove = moves[0];
 
     // Alpha-Beta w/ iterative deepening
-    currBest = moves[0];
-    //for (int currDepth = 1; currDepth <= MAX_DEPTH; currDepth++)
-    for (int moveNum = 0; moveNum < moves.size(); moveNum++)
+
+    for (int currDepth = 1; currDepth <= MAX_DEPTH; currDepth++)
     {
-        std::cout << chess::uci::moveToUci(moves[moveNum]) << std::endl;
+        chess::Move currBest = chess::Move::NO_MOVE;
+        currBest = moves[0];
+
+        //std::cout << chess::uci::moveToUci(moves[moveNum]) << std::endl;
         counter++;
-        board.makeMove(moves[moveNum]);
-        int score = AlphaBeta(board, 1, -INF, INF);
-        board.unmakeMove(moves[moveNum]);
 
-        // Compare with best move
+        int score = 0;
 
-        if (score > currBest.score()) currBest = moves[moveNum];
+        if (currDepth <= 2)
+        {
+            score = AlphaBeta(board, currDepth, -INF, INF, currBest);
+        }
+        else
+        {
+            score = AspirationSearch(board, currDepth, prevScore, currBest);
+        }
 
         // Wrap up
 
         if (isTimeUp()) break;
 
+        prevScore = score;
         bestMove = currBest;
 
         if (std::abs(score) >= MATE) break; // Check if a forced checkmate was found
@@ -100,7 +108,7 @@ chess::Move ChessSimulator::FindBestMove(std::string fen, int timeLimit)
 }
 
 // White is the maximizing player
-int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int beta)
+int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int beta, chess::Move& currBest)
 {
     g_nodeCount++;
     
@@ -112,7 +120,7 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
     if (currDepth == MAX_DEPTH) return Quiescence(board, 1, alpha, beta);
 
     chess::Color currSide = board.sideToMove();     // Current player's color. 
-    //std::tuple<chess::Move, int> bestMove;          // Tuple containing the best move and its score.
+    std::tuple<chess::Move, int> bestMove;          // Tuple containing the best move and its score.
 
     chess::Movelist possMoves;
     chess::movegen::legalmoves(possMoves, board);
@@ -125,10 +133,10 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
     for (chess::Move move : possMoves)
     {
         board.makeMove(move);
-        int score = -1 * AlphaBeta(board, currDepth + 1, -beta, -alpha);
+        int score = -1 * AlphaBeta(board, currDepth + 1, -beta, -alpha, currBest);
         board.unmakeMove(move);
 
-        /*if (currSide == chess::Color::WHITE)
+        if (currSide == chess::Color::WHITE)
         {
             get<1>(bestMove) = std::max(get<1>(bestMove), score);
             alpha = std::max(alpha, get<1>(bestMove));
@@ -138,10 +146,12 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
             beta = std::min(beta, get<1>(bestMove));
         }
 
-        if (beta <= alpha) break;*/
+        if (score > currBest.score()) currBest = move;
 
-        if (score >= beta) return beta;
-        if (score > alpha) alpha = score;
+        if (beta <= alpha) break;
+
+        //if (score >= beta) return beta;
+        //if (score > alpha) alpha = score;
     }
 
     return alpha;
@@ -155,6 +165,7 @@ int ChessSimulator::Quiescence(chess::Board& board, int currDepth, int alpha, in
     if (standPat > alpha) alpha = standPat;     // Raise lower bound
 
     // Generate captures
+
     chess::Movelist captures;
     chess::movegen::legalmoves<chess::movegen::MoveGenType::CAPTURE>(captures, board);
 
@@ -186,6 +197,41 @@ int ChessSimulator::MVV_LVA(const chess::Board& board, const chess::Move& move)
     int attacker = GetPieceValue(board.at(move.from()));
 
     return (victim * 10) - attacker;
+}
+
+int ChessSimulator::AspirationSearch(chess::Board& board, int currDepth, int prevScore, chess::Move& currBest)
+{
+    int delta = 75;     // Intial window half-width in centipawns
+    int alpha = prevScore - delta;
+    int beta = prevScore + delta;
+    int researchCount = 0;
+
+    while (true)
+    {
+        int score = 0;
+        
+        if (researchCount < ASP_SEARCH_MAX) score = AlphaBeta(board, currDepth, alpha, beta, currBest);
+        else score = AlphaBeta(board, currDepth, -INF, INF, currBest);  // After researching too many times, give up on narrowed window
+
+        if (isTimeUp()) return 0;
+
+        if (score <= alpha && researchCount < ASP_SEARCH_MAX)
+        {
+            alpha = std::max(alpha - delta, -INF);
+            delta *= 2;
+            researchCount++;
+        }
+        else if (score >= beta && researchCount < ASP_SEARCH_MAX)
+        {
+            beta = std::min(beta + delta, INF);
+            delta *= 2;
+            researchCount++;
+        }
+        else
+        {
+            return score;
+        }
+    }
 }
 
 /***** Data Functions *****/
