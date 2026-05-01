@@ -4,7 +4,7 @@
 
 using namespace ChessSimulator;
 
-const int MAX_DEPTH = 3;   // Maximum depth for general search
+const int MAX_DEPTH = 4;   // Maximum depth for general search
 const int MAX_QDEPTH = 5;   // Maximum depth for quiescence search
 const int MATE = 100000;    // Score value of a mate
 const int INF = std::numeric_limits<int>::max();
@@ -14,7 +14,7 @@ static int g_nodeCount = 0;
 static std::chrono::steady_clock::time_point g_timeStart;
 static int g_timeLimitMS;
 
-
+/***** Debug Variables *****/
 
 int counter = 0;
 
@@ -66,14 +66,18 @@ chess::Move ChessSimulator::FindBestMove(std::string fen, int timeLimit)
 
     // Alpha-Beta w/ iterative deepening
     currBest = moves[0];
-    //for (int currDepth = 1; currDepth <= MAX_DEPTH; currDepth++)
+
     for (int moveNum = 0; moveNum < moves.size(); moveNum++)
     {
-        //std::cout << chess::uci::moveToUci(moves[moveNum]) << std::endl;
         counter++;
+
+        // Try move
+
         board.makeMove(moves[moveNum]);
+
         int score = AlphaBeta(board, 1, -INF, INF);
         moves[moveNum].setScore(score);
+
         board.unmakeMove(moves[moveNum]);
 
         // Compare with best move
@@ -104,8 +108,6 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
 
     if (currDepth == MAX_DEPTH) return Quiescence(board, 1, alpha, beta);
 
-    chess::Color currSide = board.sideToMove();     // Current player's color. 
-    //std::tuple<chess::Move, int> bestMove;          // Tuple containing the best move and its score.
     int bestValue = 0;
 
     chess::Movelist possMoves;
@@ -119,35 +121,13 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
     for (chess::Move move : possMoves)
     {
         board.makeMove(move);
+
         int score = -1 * AlphaBeta(board, currDepth + 1, -beta, -alpha);
+
         board.unmakeMove(move);
-
-        /*if (currSide == chess::Color::WHITE)
-        {
-            get<1>(bestMove) = std::max(get<1>(bestMove), score);
-            alpha = std::max(alpha, get<1>(bestMove));
-        }
-        else {
-            get<1>(bestMove) = std::min(get<1>(bestMove), score);
-            beta = std::min(beta, get<1>(bestMove));
-        }
-
-        if (beta <= alpha) break;*/
 
         if (score >= beta) return beta;
         if (score > alpha) alpha = score;
-
-        /*if (currSide == chess::Color::WHITE)
-        {
-            bestValue = std::max(bestValue, score);
-            alpha = std::max(alpha, bestValue);
-        }
-        else {
-            bestValue = std::min(bestValue, score);
-            beta = std::min(beta, bestValue);
-        }
-
-        if (beta <= alpha) break;*/
     }
 
     return alpha;
@@ -159,14 +139,6 @@ int ChessSimulator::Quiescence(chess::Board& board, int currDepth, int alpha, in
 
     if (standPat >= beta) return beta;          // Current position is best
     if (standPat > alpha) alpha = standPat;     // Raise lower bound
-
-    /*if (board.sideToMove() == chess::Color::WHITE)
-    {
-        alpha = std::max(alpha, standPat);
-    }
-    else {
-        beta = std::min(beta, standPat);
-    }*/
 
     // Generate captures
     chess::Movelist captures;
@@ -184,7 +156,9 @@ int ChessSimulator::Quiescence(chess::Board& board, int currDepth, int alpha, in
     for (chess::Move move : captures)
     {
         board.makeMove(move);
+
         int score = -1 * Quiescence(board, currDepth++, -beta, -alpha);
+
         board.unmakeMove(move);
 
         if (score >= beta) return beta;     // Beta cutoff
@@ -210,7 +184,7 @@ bool ChessSimulator::isTimeUp()
     return timeElapsed >= g_timeLimitMS;
 }
 
-// Simple material evaluation
+// Simple material evaluation (deprecated)
 int ChessSimulator::Evaluate(chess::Board board)
 {
     const int PIECE_VALUES[] = { (int)PieceValues::PAWN, (int)PieceValues::KNIGHT, (int)PieceValues::BISHOP, (int)PieceValues::ROOK, (int)PieceValues::QUEEN, (int)PieceValues::KING };

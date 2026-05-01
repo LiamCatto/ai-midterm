@@ -110,13 +110,13 @@ namespace ChessSimulator {
 	chess::Move FindBestMove(std::string fen, int timeLimit);
 
 	// White is the maximizing player
-	int AlphaBeta(chess::Board board, int currDepth, int alpha, int beta, chess::Move& currBest);
+	int AlphaBeta(chess::Board board, int currDepth, int alpha, int beta);
 
 	int Quiescence(chess::Board& board, int currDepth, int alpha, int beta);
 
 	int MVV_LVA(const chess::Board& board, const chess::Move& move);
 
-	int AspirationSearch(chess::Board& board, int depth, int prevScore, chess::Move& currBest);
+	//int AspirationSearch(chess::Board& board, int depth, int prevScore);	// A merge conflict removed much of the code for this, and I don't have time to implement it again :(
 
 	/***** Data Functions *****/
 

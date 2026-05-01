@@ -1,8 +1,7 @@
-Search Algorith: Min-Max
+Search Algorith: Min-Max w/ Alpha-Beta Pruning
 Advanced Techniques:
-	- Alpha-Beta Pruning
 	- Iterative Deepening
 	- Quiescence Search
-	- Aspiration Windows
+	- Aspiration Windows	(At least it DID, but some fool (me) over wrote it)
 	- Move Ordering (MVV-LVA)
 	- Piece-Square Tables
