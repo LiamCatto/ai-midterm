@@ -3,5 +3,6 @@ Advanced Techniques:
 	- Alpha-Beta Pruning
 	- Iterative Deepening
 	- Quiescence Search
-Additional Features:
-Experiments:
+	- Aspiration Windows
+	- Move Ordering (MVV-LVA)
+	- Piece-Square Tables

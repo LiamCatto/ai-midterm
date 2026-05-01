@@ -4,19 +4,11 @@
 
 using namespace ChessSimulator;
 
-enum class PieceValues {
-    PAWN = 100,
-    KNIGHT = 320,
-    BISHOP = 330,
-    ROOK = 500,
-    QUEEN = 900,
-    KING = 99999
-};
-
 const int MAX_DEPTH = 3;   // Maximum depth for general search
 const int MAX_QDEPTH = 5;   // Maximum depth for quiescence search
 const int MATE = 100000;    // Score value of a mate
-const int INF = std::numeric_limits<int>::infinity();
+const int INF = std::numeric_limits<int>::max();
+const PST pst;
 
 static int g_nodeCount = 0;
 static std::chrono::steady_clock::time_point g_timeStart;
@@ -77,10 +69,11 @@ chess::Move ChessSimulator::FindBestMove(std::string fen, int timeLimit)
     //for (int currDepth = 1; currDepth <= MAX_DEPTH; currDepth++)
     for (int moveNum = 0; moveNum < moves.size(); moveNum++)
     {
-        std::cout << chess::uci::moveToUci(moves[moveNum]) << std::endl;
+        //std::cout << chess::uci::moveToUci(moves[moveNum]) << std::endl;
         counter++;
         board.makeMove(moves[moveNum]);
         int score = AlphaBeta(board, 1, -INF, INF);
+        moves[moveNum].setScore(score);
         board.unmakeMove(moves[moveNum]);
 
         // Compare with best move
@@ -113,6 +106,7 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
 
     chess::Color currSide = board.sideToMove();     // Current player's color. 
     //std::tuple<chess::Move, int> bestMove;          // Tuple containing the best move and its score.
+    int bestValue = 0;
 
     chess::Movelist possMoves;
     chess::movegen::legalmoves(possMoves, board);
@@ -142,6 +136,18 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
 
         if (score >= beta) return beta;
         if (score > alpha) alpha = score;
+
+        /*if (currSide == chess::Color::WHITE)
+        {
+            bestValue = std::max(bestValue, score);
+            alpha = std::max(alpha, bestValue);
+        }
+        else {
+            bestValue = std::min(bestValue, score);
+            beta = std::min(beta, bestValue);
+        }
+
+        if (beta <= alpha) break;*/
     }
 
     return alpha;
@@ -149,10 +155,18 @@ int ChessSimulator::AlphaBeta(chess::Board board, int currDepth, int alpha, int 
 
 int ChessSimulator::Quiescence(chess::Board& board, int currDepth, int alpha, int beta)
 {
-    int standPat = Evaluate(board);
+    int standPat = EvaluatePST(board);
 
     if (standPat >= beta) return beta;          // Current position is best
     if (standPat > alpha) alpha = standPat;     // Raise lower bound
+
+    /*if (board.sideToMove() == chess::Color::WHITE)
+    {
+        alpha = std::max(alpha, standPat);
+    }
+    else {
+        beta = std::min(beta, standPat);
+    }*/
 
     // Generate captures
     chess::Movelist captures;
@@ -224,4 +238,46 @@ int ChessSimulator::GetPieceValue(const chess::Piece piece)
     else if (piece == chess::Piece::BLACKKING    || piece == chess::Piece::WHITEKING)    return (int)PieceValues::KING;
     
     return 0;
+}
+
+int ChessSimulator::EvaluatePST(chess::Board board)
+{
+    int score = 0;
+
+    for (int sq = 0; sq < 64; sq++)
+    {
+        chess::Piece piece = board.at(sq);
+
+        if (piece == chess::Piece::NONE) continue;
+
+        switch (piece.type())
+        {
+            case chess::PAWN:
+                if (piece.color() == chess::Color::WHITE) score += GetPieceValue(piece) + pst.PAWN[sq];
+                if (piece.color() == chess::Color::BLACK) score += GetPieceValue(piece) + pst.PAWN[pst.FLIP[sq]];
+                break;
+            case chess::KNIGHT:
+                if (piece.color() == chess::Color::WHITE) score += GetPieceValue(piece) + pst.KNIGHT[sq];
+                if (piece.color() == chess::Color::BLACK) score += GetPieceValue(piece) + pst.KNIGHT[pst.FLIP[sq]];
+                break;
+            case chess::BISHOP:
+                if (piece.color() == chess::Color::WHITE) score += GetPieceValue(piece) + pst.BISHOP[sq];
+                if (piece.color() == chess::Color::BLACK) score += GetPieceValue(piece) + pst.BISHOP[pst.FLIP[sq]];
+                break;
+            case chess::ROOK:
+                if (piece.color() == chess::Color::WHITE) score += GetPieceValue(piece) + pst.ROOK[sq];
+                if (piece.color() == chess::Color::BLACK) score += GetPieceValue(piece) + pst.ROOK[pst.FLIP[sq]];
+                break;
+            case chess::QUEEN:
+                if (piece.color() == chess::Color::WHITE) score += GetPieceValue(piece) + pst.QUEEN[sq];
+                if (piece.color() == chess::Color::BLACK) score += GetPieceValue(piece) + pst.QUEEN[pst.FLIP[sq]];
+                break;
+            case chess::KING:
+                if (piece.color() == chess::Color::WHITE) score += GetPieceValue(piece) + pst.KING[sq];
+                if (piece.color() == chess::Color::BLACK) score += GetPieceValue(piece) + pst.KING[pst.FLIP[sq]];
+                break;
+        }
+    }
+
+    return score;
 }
